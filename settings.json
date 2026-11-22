@@ -1,0 +1,50 @@
+{
+  "system": {
+    "log_level": "info",
+    "hot_reload": true
+  },
+  "video": {
+    "source_type": "file",
+    "file_path": "/home/work/tmp/AvatarG0006.mp4",
+    "device_path": "/dev/video4",
+    "width": 1280,
+    "height": 720,
+    "fps": 60
+  },
+  "detection": {
+    "model_path": "models/anti_uav_fast_320_int8_pc.onnx",
+    "confidence_threshold": 0.4,
+    "nms_iou_threshold": 0.45,
+    "input_size": 320
+  },
+  "tracking": {
+    "enabled": true,
+    "algorithm": "kcf",
+    "max_lost_frames": 15,
+    "iir_alpha": 0.65
+  },
+  "osd": {
+    "show_fps": true,
+    "show_crosshair": true,
+    "show_telemetry": true,
+    "box_color": [
+      0,
+      255,
+      0
+    ],
+    "text_color": [
+      255,
+      255,
+      255
+    ],
+    "line_thickness": 2
+  },
+  "control": {
+    "kp_yaw": 1.0,
+    "ki_yaw": 0.05,
+    "kd_yaw": 0.1,
+    "kp_pitch": 1.0,
+    "ki_pitch": 0.05,
+    "kd_pitch": 0.1
+  }
+}

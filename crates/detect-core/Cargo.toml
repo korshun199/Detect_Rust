@@ -5,4 +5,6 @@ edition = "2021"
 description = "Pure algorithmic core for real-time object detection, tracking, and filtering"
 
 [dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
