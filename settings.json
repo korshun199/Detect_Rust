@@ -13,12 +13,13 @@
   },
   "detection": {
     "model_path": "models/anti_uav_fast_320_int8_pc.onnx",
-    "confidence_threshold": 0.4,
+    "confidence_threshold": 0.15,
     "nms_iou_threshold": 0.45,
     "input_size": 320
   },
   "tracking": {
     "enabled": true,
+    "mode": "ai_detection",
     "algorithm": "kcf",
     "max_lost_frames": 15,
     "iir_alpha": 0.65

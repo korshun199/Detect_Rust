@@ -1,3 +1,4 @@
+use crate::preprocess::LetterboxGeometry;
 use detect_core::{BBox, Detection, non_max_suppression};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
@@ -14,7 +15,6 @@ pub struct OnnxInferenceWorker {
 
 impl OnnxInferenceWorker {
     pub fn spawn(model_path: &str, input_size: u32) -> Result<Self, String> {
-        // Ищем python с установленным onnxruntime
         let python_paths = [
             "/home/work/VideoT16/.venv/bin/python",
             "python3",
@@ -54,13 +54,11 @@ impl OnnxInferenceWorker {
         let (frame_tx, frame_rx) = channel::<Vec<f32>>();
         let (result_tx, result_rx) = channel::<Vec<Detection>>();
 
-        // Фоновый поток обмена данными с воркером
         thread::spawn(move || {
             let mut mut_stdin = stdin;
             let mut mut_reader = reader;
 
             while let Ok(tensor) = frame_rx.recv() {
-                // Преобразуем &[f32] в сырые байты
                 let byte_slice = unsafe {
                     std::slice::from_raw_parts(
                         tensor.as_ptr() as *const u8,
@@ -72,7 +70,6 @@ impl OnnxInferenceWorker {
                     break;
                 }
 
-                // Читаем количество найденных объектов (u32 little-endian)
                 let mut count_buf = [0u8; 4];
                 if mut_reader.read_exact(&mut count_buf).is_err() {
                     break;
@@ -80,7 +77,6 @@ impl OnnxInferenceWorker {
                 let count = u32::from_le_bytes(count_buf) as usize;
 
                 let mut detections = Vec::with_capacity(count);
-                // Каждая детекция: cx, cy, w, h, conf, class_id (4 * 5 + 4 = 24 байта)
                 let mut det_buf = [0u8; 24];
 
                 for _ in 0..count {
@@ -109,41 +105,47 @@ impl OnnxInferenceWorker {
         })
     }
 
-    /// Отправляет тензор кадра в фоновый поток инференса (если воркер свободен)
     pub fn try_detect(&self, tensor: &[f32]) {
-        // Отправляем копию тензора в канал
         let _ = self.frame_tx.send(tensor.to_vec());
     }
 
-    /// Проверяет наличие готовых результатов инференса без блокировки (non-blocking)
+    /// Проверяет наличие готовых результатов инференса и преобразует координаты
+    /// с учетом пропорционального Letterbox (вычитание pad_top/pad_left и деление на scale)
     pub fn poll_detections(
         &self,
+        geo: LetterboxGeometry,
         orig_width: f32,
         orig_height: f32,
         nms_iou_threshold: f32,
         confidence_threshold: f32,
     ) -> Option<Vec<Detection>> {
         let mut latest_res = None;
-        // Забираем самый свежий результат из канала (сливаем промежуточные)
         while let Ok(res) = self.result_rx.try_recv() {
             latest_res = Some(res);
         }
 
         if let Some(raw_dets) = latest_res {
-            let scale_x = orig_width / (self.input_size as f32);
-            let scale_y = orig_height / (self.input_size as f32);
+            if geo.scale <= 0.0 {
+                return None;
+            }
 
             let scaled: Vec<Detection> = raw_dets
                 .into_iter()
                 .filter(|d| d.confidence >= confidence_threshold)
-                .map(|d| {
-                    let bbox = BBox::new(
-                        d.bbox.cx * scale_x,
-                        d.bbox.cy * scale_y,
-                        d.bbox.w * scale_x,
-                        d.bbox.h * scale_y,
-                    );
-                    Detection::new(bbox, d.confidence, d.class_id)
+                .filter_map(|d| {
+                    // Честное обратное проецирование координат из Python detector.py
+                    let real_cx = (d.bbox.cx - geo.pad_left) / geo.scale;
+                    let real_cy = (d.bbox.cy - geo.pad_top) / geo.scale;
+                    let real_w = d.bbox.w / geo.scale;
+                    let real_h = d.bbox.h / geo.scale;
+
+                    // Отсекаем координаты, выпавшие на черные/серые поля
+                    if real_cx < 0.0 || real_cx > orig_width || real_cy < 0.0 || real_cy > orig_height {
+                        return None;
+                    }
+
+                    let bbox = BBox::new(real_cx, real_cy, real_w, real_h);
+                    Some(Detection::new(bbox, d.confidence, d.class_id))
                 })
                 .collect();
 

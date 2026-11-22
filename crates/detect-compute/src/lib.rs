@@ -4,6 +4,6 @@ pub mod preprocess;
 pub mod worker;
 pub mod yolo;
 
-pub use preprocess::Letterbox;
+pub use preprocess::{Letterbox, LetterboxGeometry};
 pub use worker::OnnxInferenceWorker;
 pub use yolo::YoloDetector;

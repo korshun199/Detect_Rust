@@ -128,15 +128,16 @@ fn main() {
                 last_frame_data.copy_from_slice(raw_frame);
                 frame_counter += 1;
 
-                // Препроцессинг в тензор 320x320
-                let tensor = letterbox.process_rgb24(raw_frame, width, height);
+                // Препроцессинг в тензор 320x320 с пропорциональным Letterbox и серыми полями 114
+                let (tensor, geo) = letterbox.process_rgb24(raw_frame, width, height);
 
                 // Отправляем кадр на распознавание в нейросеть
                 if let Some(ref worker) = onnx_worker {
                     worker.try_detect(tensor);
 
-                    // Проверяем свежие детекции от нейросети
+                    // Проверяем свежие детекции от нейросети с честным unmap координат
                     if let Some(new_dets) = worker.poll_detections(
+                        geo,
                         width as f32,
                         height as f32,
                         settings.detection.nms_iou_threshold,
