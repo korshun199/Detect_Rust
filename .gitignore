@@ -8,4 +8,6 @@ models/
 .env
 *.local
 log/
+logs/
+*.log
 tmp/

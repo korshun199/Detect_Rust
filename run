@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# Единый исполняемый скрипт run для Олежки.
+# Машенька сама обновляет команды в этом файле перед тем, как предложить Олежке запуск.
+# Весь вывод одновременно показывается в цветной консоли и пишется в logs/latest.log
+# ==============================================================================
+set -eo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOG_DIR="${SCRIPT_DIR}/logs"
+mkdir -p "${LOG_DIR}"
+
+LOG_FILE="${LOG_DIR}/latest.log"
+TIMESTAMP="$(date +'%Y%m%d_%H%M%S')"
+HIST_LOG="${LOG_DIR}/${TIMESTAMP}_run.log"
+
+echo -e "\x1b[1;36m=== [RUN START] $(date +'%Y-%m-%d %H:%M:%S') ===\x1b[0m" | tee "${LOG_FILE}" | tee "${HIST_LOG}"
+
+# --- Команда для выполнения (формируется Машенькой) ---
+(
+    cd "${SCRIPT_DIR}"
+    cargo run --release -p desktop-tester -- --bench
+) 2>&1 | tee -a "${LOG_FILE}" | tee -a "${HIST_LOG}"
+
+echo -e "\x1b[1;32m=== [RUN COMPLETE] Лог сохранен в: ${LOG_FILE} ===\x1b[0m" | tee -a "${LOG_FILE}" | tee -a "${HIST_LOG}"
