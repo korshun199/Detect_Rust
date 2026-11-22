@@ -20,7 +20,8 @@ impl VideoReader {
 
         let mut cmd = Command::new("ffmpeg");
         cmd.arg("-hide_banner")
-            .arg("-loglevel").arg("error");
+            .arg("-loglevel").arg("error")
+            .arg("-nostdin"); // Предотвращает захват и сбой tty терминала
 
         if realtime {
             cmd.arg("-re");
@@ -31,6 +32,7 @@ impl VideoReader {
             .arg("-pix_fmt").arg("rgb24")
             .arg("-s").arg(format!("{}x{}", width, height))
             .arg("-")
+            .stdin(Stdio::null()) // Отключаем stdin, чтобы ffmpeg не трогал терминал
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());
 

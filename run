@@ -6,6 +6,9 @@
 # ==============================================================================
 set -eo pipefail
 
+# Автоматическое восстановление режима терминала (stty sane) при выходе
+trap 'stty sane 2>/dev/null || true' EXIT
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="${SCRIPT_DIR}/logs"
 mkdir -p "${LOG_DIR}"
