@@ -22,7 +22,7 @@ echo -e "\x1b[1;36m=== [RUN START] $(date +'%Y-%m-%d %H:%M:%S') ===\x1b[0m" | te
 # --- Команда для выполнения (формируется Машенькой) ---
 (
     cd "${SCRIPT_DIR}"
-    cargo run --release -p desktop-tester -- --bench
+    ./target/release/desktop-tester
 ) 2>&1 | tee -a "${LOG_FILE}" | tee -a "${HIST_LOG}"
 
 echo -e "\x1b[1;32m=== [RUN COMPLETE] Лог сохранен в: ${LOG_FILE} ===\x1b[0m" | tee -a "${LOG_FILE}" | tee -a "${HIST_LOG}"

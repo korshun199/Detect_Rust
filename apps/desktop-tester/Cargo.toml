@@ -6,4 +6,5 @@ edition = "2021"
 [dependencies]
 detect-core = { path = "../../crates/detect-core" }
 detect-compute = { path = "../../crates/detect-compute" }
+minifb = "0.29.0"
 
