@@ -2,12 +2,15 @@ use crate::preprocess::LetterboxGeometry;
 use detect_core::{BBox, Detection, non_max_suppression};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{channel, Receiver};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
 /// Асинхронный воркер инференса модели ONNX в фоновом потоке
 pub struct OnnxInferenceWorker {
-    frame_tx: Sender<Vec<f32>>,
+    pending_frame: Arc<(Mutex<Option<Vec<f32>>>, Condvar)>,
+    running: Arc<AtomicBool>,
     result_rx: Receiver<Vec<Detection>>,
     child: Option<Child>,
     pub input_size: u32,
@@ -51,14 +54,33 @@ impl OnnxInferenceWorker {
             return Err(format!("Воркер не прислал READY: {}", line));
         }
 
-        let (frame_tx, frame_rx) = channel::<Vec<f32>>();
+        // Одноэлементный буфер последнего кадра (политика: LATEST ONLY)
+        // Исключает накопление очереди и устраняет отставание рамок от реального объекта
+        let pending_frame = Arc::new((Mutex::new(None::<Vec<f32>>), Condvar::new()));
+        let pending_clone = pending_frame.clone();
+        let running = Arc::new(AtomicBool::new(true));
+        let running_clone = running.clone();
+
         let (result_tx, result_rx) = channel::<Vec<Detection>>();
 
         thread::spawn(move || {
             let mut mut_stdin = stdin;
             let mut mut_reader = reader;
 
-            while let Ok(tensor) = frame_rx.recv() {
+            while running_clone.load(Ordering::Relaxed) {
+                // Извлекаем САМЫЙ СВЕЖИЙ кадр, отбрасывая пропущенные за время прошлого инференса
+                let tensor = {
+                    let (lock, cvar) = &*pending_clone;
+                    let mut slot = lock.lock().unwrap();
+                    while slot.is_none() && running_clone.load(Ordering::Relaxed) {
+                        slot = cvar.wait(slot).unwrap();
+                    }
+                    if !running_clone.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    slot.take().unwrap()
+                };
+
                 let byte_slice = unsafe {
                     std::slice::from_raw_parts(
                         tensor.as_ptr() as *const u8,
@@ -98,7 +120,8 @@ impl OnnxInferenceWorker {
         });
 
         Ok(Self {
-            frame_tx,
+            pending_frame,
+            running,
             result_rx,
             child: Some(child),
             input_size,
@@ -106,7 +129,12 @@ impl OnnxInferenceWorker {
     }
 
     pub fn try_detect(&self, tensor: &[f32]) {
-        let _ = self.frame_tx.send(tensor.to_vec());
+        let (lock, cvar) = &*self.pending_frame;
+        if let Ok(mut slot) = lock.lock() {
+            // Перезаписываем слот: всегда отправляем только самый последний кадр
+            *slot = Some(tensor.to_vec());
+            cvar.notify_one();
+        }
     }
 
     /// Проверяет наличие готовых результатов инференса и преобразует координаты
@@ -158,6 +186,9 @@ impl OnnxInferenceWorker {
 
 impl Drop for OnnxInferenceWorker {
     fn drop(&mut self) {
+        self.running.store(false, Ordering::Relaxed);
+        let (_, cvar) = &*self.pending_frame;
+        cvar.notify_all();
         if let Some(mut child) = self.child.take() {
             let _ = child.kill();
         }

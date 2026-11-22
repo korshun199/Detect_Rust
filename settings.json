@@ -5,7 +5,7 @@
   },
   "video": {
     "source_type": "file",
-    "file_path": "/home/work/tmp/AvatarG0006.mp4",
+    "file_path": "tmp/test_drone_0007.mp4",
     "device_path": "/dev/video4",
     "width": 1280,
     "height": 720,
@@ -13,9 +13,13 @@
   },
   "detection": {
     "model_path": "models/anti_uav_fast_320_int8_pc.onnx",
-    "confidence_threshold": 0.15,
+    "confidence_threshold": 0.08,
     "nms_iou_threshold": 0.45,
-    "input_size": 320
+    "input_size": 320,
+    "margin_left_pct": 20.0,
+    "margin_right_pct": 20.0,
+    "margin_top_pct": 0.0,
+    "margin_bottom_pct": 0.0
   },
   "tracking": {
     "enabled": true,

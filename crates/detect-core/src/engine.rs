@@ -101,21 +101,13 @@ impl TrackingEngine {
         dt: f32,
     ) -> (TrackState, Option<BBox>, FlightControlCommand) {
         let (new_state, new_target) = match self.mode {
-            // РЕЖИМ 1: НЕЙРОСЕТЕВОЙ (Поиск и автозахват лучших кандидатов ИИ)
+            // РЕЖИМ 1: НЕЙРОСЕТЕВОЙ (Поиск, распознавание и ручной захват по кнопке)
             OperatingMode::AiDetection => {
                 match self.state {
                     TrackState::Searching => {
-                        if let Some(best) = detections.iter().max_by(|a, b| {
-                            a.confidence
-                                .partial_cmp(&b.confidence)
-                                .unwrap_or(std::cmp::Ordering::Equal)
-                        }) {
-                            self.lock_target(best.bbox);
-                            self.confidence = best.confidence;
-                            (self.state, self.target)
-                        } else {
-                            (TrackState::Searching, None)
-                        }
+                        // В свободном режиме распознавания цель отображается рамкой обнаружения,
+                        // захват включается оператором по ENTER или клику
+                        (TrackState::Searching, None)
                     }
                     TrackState::Tracking | TrackState::Lost => {
                         self.track_with_kalman(detections, dt)

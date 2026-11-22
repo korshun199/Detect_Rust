@@ -205,3 +205,38 @@ pub fn draw_text(
         cursor_x += 6 * scale;
     }
 }
+
+/// Отрисовывает тактические границы рабочей зоны обнаружения (отсечение вращающихся боковых винтов)
+pub fn draw_roi_boundaries(
+    buffer: &mut [u32],
+    width: usize,
+    height: usize,
+    margin_left_pct: f32,
+    margin_right_pct: f32,
+    color: u32,
+) {
+    let left_x = (width as f32 * (margin_left_pct / 100.0)).round() as usize;
+    let right_x = (width as f32 * (1.0 - margin_right_pct / 100.0)).round() as usize;
+
+    if left_x > 0 && left_x < width {
+        // Пунктирная вертикальная разделительная линия слева
+        for y in (0..height).step_by(12) {
+            for dy in 0..6 {
+                if y + dy < height {
+                    buffer[(y + dy) * width + left_x] = color;
+                }
+            }
+        }
+    }
+
+    if right_x > 0 && right_x < width {
+        // Пунктирная вертикальная разделительная линия справа
+        for y in (0..height).step_by(12) {
+            for dy in 0..6 {
+                if y + dy < height {
+                    buffer[(y + dy) * width + right_x] = color;
+                }
+            }
+        }
+    }
+}

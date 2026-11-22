@@ -111,6 +111,8 @@ fn main() {
     let mut frame_counter = 0u32;
     let mut is_paused = false;
     let mut last_detections: Vec<Detection> = Vec::new();
+    let mut last_det_time = Instant::now();
+    let mut frames_with_drone = 0u32;
 
     println!("[GUI] Окно открыто. Управление Режимом 1 (Распознавание -> Захват -> Слежение):");
     println!("      [Свободный режим]  - Нейросеть находит дрон и подсвечивает рамкой с % уверенности");
@@ -143,7 +145,20 @@ fn main() {
                         settings.detection.nms_iou_threshold,
                         settings.detection.confidence_threshold,
                     ) {
-                        last_detections = new_dets;
+                        // Отсекаем вращающиеся боковые винты и краевые зоны кадра
+                        let filtered: Vec<Detection> = new_dets
+                            .into_iter()
+                            .filter(|d| settings.detection.is_in_active_roi(&d.bbox, width as f32, height as f32))
+                            .collect();
+                        if !filtered.is_empty() {
+                            frames_with_drone += 1;
+                            last_detections = filtered;
+                            last_det_time = Instant::now();
+                        } else {
+                            last_detections.clear();
+                        }
+                    } else if last_det_time.elapsed().as_millis() > 250 {
+                        last_detections.clear();
                     }
                 }
 
@@ -151,7 +166,7 @@ fn main() {
                 let dt = 1.0 / (settings.video.fps as f32);
                 let _ = engine.update(&last_detections, width as f32, height as f32, dt);
             } else {
-                println!("[STATUS] Конец видеофайла.");
+                println!("[STATUS] Конец видеофайла. Всего обработано кадров: {}, кадров с распознанным дроном: {}", frame_counter, frames_with_drone);
                 break;
             }
         }
@@ -198,6 +213,17 @@ fn main() {
         }
 
         // 4. Отрисовка тактического OSD
+        // 4.0. Разделительные границы зоны отсечения вращающихся боковых винтов
+        let prop_guide_color = 0x00334455;
+        osd::draw_roi_boundaries(
+            &mut screen_buffer,
+            width,
+            height,
+            settings.detection.margin_left_pct,
+            settings.detection.margin_right_pct,
+            prop_guide_color,
+        );
+
         // 4.1. Центральное перекрестие
         if settings.osd.show_crosshair {
             osd::draw_crosshair(
@@ -288,6 +314,10 @@ fn main() {
             TrackState::Tracking | TrackState::Lost => "[R]: UNLOCK / RESUME SCAN | [SPACE]: PAUSE | [ESC]: EXIT",
         };
         osd::draw_text(&mut screen_buffer, width, height, 20, height - 30, help_text, 0x00AAAAAA, 2);
+
+        // Индикатор маски винтов
+        let mask_info = format!("PROP MASK: L:{:.0}% R:{:.0}%", settings.detection.margin_left_pct, settings.detection.margin_right_pct);
+        osd::draw_text(&mut screen_buffer, width, height, width - 360, height - 30, &mask_info, 0x0088AAAA, 2);
 
         // Расчет FPS
         if last_fps_time.elapsed().as_millis() >= 500 {

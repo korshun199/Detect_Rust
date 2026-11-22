@@ -97,16 +97,48 @@ pub struct DetectionConfig {
     pub confidence_threshold: f32,
     pub nms_iou_threshold: f32,
     pub input_size: u32,
+    /// Процент отсечения слева (вращающиеся винты камеры / поля)
+    #[serde(default = "default_propeller_margin")]
+    pub margin_left_pct: f32,
+    /// Процент отсечения справа (вращающиеся винты камеры / поля)
+    #[serde(default = "default_propeller_margin")]
+    pub margin_right_pct: f32,
+    /// Процент отсечения сверху (OSD / шапка)
+    #[serde(default)]
+    pub margin_top_pct: f32,
+    /// Процент отсечения снизу (шасси / капот)
+    #[serde(default)]
+    pub margin_bottom_pct: f32,
+}
+
+fn default_propeller_margin() -> f32 {
+    20.0
 }
 
 impl Default for DetectionConfig {
     fn default() -> Self {
         Self {
             model_path: "models/anti_uav_fast_320_int8_pc.onnx".to_string(),
-            confidence_threshold: 0.40,
+            confidence_threshold: 0.08,
             nms_iou_threshold: 0.45,
             input_size: 320,
+            margin_left_pct: 20.0,
+            margin_right_pct: 20.0,
+            margin_top_pct: 0.0,
+            margin_bottom_pct: 0.0,
         }
+    }
+}
+
+impl DetectionConfig {
+    /// Проверяет, попадает ли центр рамки в активную зону кадра (вне боковых винтов и краевых зон)
+    pub fn is_in_active_roi(&self, bbox: &crate::bbox::BBox, frame_width: f32, frame_height: f32) -> bool {
+        let left_cutoff = frame_width * (self.margin_left_pct / 100.0);
+        let right_cutoff = frame_width * (1.0 - self.margin_right_pct / 100.0);
+        let top_cutoff = frame_height * (self.margin_top_pct / 100.0);
+        let bottom_cutoff = frame_height * (1.0 - self.margin_bottom_pct / 100.0);
+
+        bbox.cx >= left_cutoff && bbox.cx <= right_cutoff && bbox.cy >= top_cutoff && bbox.cy <= bottom_cutoff
     }
 }
 
@@ -199,5 +231,25 @@ mod tests {
         let restored: Settings = serde_json::from_str(&json).unwrap();
         assert_eq!(restored.video.width, 1280);
         assert_eq!(restored.detection.input_size, 320);
+        assert_eq!(restored.detection.margin_left_pct, 20.0);
+    }
+
+    #[test]
+    fn test_propeller_roi_filtering() {
+        let det_config = DetectionConfig::default(); // 20% left & right margin
+        let width = 1280.0;
+        let height = 720.0;
+
+        // Левый винт на x = 100 px (7.8%) -> должен быть отсечен
+        let left_prop = crate::bbox::BBox::new(100.0, 300.0, 50.0, 50.0);
+        assert!(!det_config.is_in_active_roi(&left_prop, width, height));
+
+        // Правый винт на x = 1150 px (89.8%) -> должен быть отсечен
+        let right_prop = crate::bbox::BBox::new(1150.0, 300.0, 50.0, 50.0);
+        assert!(!det_config.is_in_active_roi(&right_prop, width, height));
+
+        // Настоящий дрон в небе на x = 640 px (50%) -> проходит валидацию
+        let real_drone = crate::bbox::BBox::new(640.0, 250.0, 30.0, 25.0);
+        assert!(det_config.is_in_active_roi(&real_drone, width, height));
     }
 }

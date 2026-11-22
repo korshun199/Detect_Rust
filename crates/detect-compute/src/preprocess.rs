@@ -68,20 +68,51 @@ impl Letterbox {
         let inv_scale_x = src_w as f32 / resized_w as f32;
         let inv_scale_y = src_h as f32 / resized_h as f32;
 
-        // 2. Вписываем несжатое изображение строго по центру
+        // 2. Вписываем несжатое изображение строго по центру с билинейной интерполяцией (как cv2.INTER_LINEAR)
         for ry in 0..resized_h {
-            let sy = ((ry as f32 * inv_scale_y) as usize).min(src_h - 1);
-            let src_row = sy * src_w * 3;
+            let sy_f = (ry as f32 + 0.5) * inv_scale_y - 0.5;
+            let sy0 = (sy_f.floor() as isize).clamp(0, (src_h - 1) as isize) as usize;
+            let sy1 = (sy0 + 1).min(src_h - 1);
+            let fy = (sy_f - sy_f.floor()).clamp(0.0, 1.0);
+            let inv_fy = 1.0 - fy;
+
+            let row0 = sy0 * src_w * 3;
+            let row1 = sy1 * src_w * 3;
             let dst_y = pad_top + ry;
             let dst_row = dst_y * tw;
 
             for rx in 0..resized_w {
-                let sx = ((rx as f32 * inv_scale_x) as usize).min(src_w - 1);
-                let src_idx = src_row + sx * 3;
+                let sx_f = (rx as f32 + 0.5) * inv_scale_x - 0.5;
+                let sx0 = (sx_f.floor() as isize).clamp(0, (src_w - 1) as isize) as usize;
+                let sx1 = (sx0 + 1).min(src_w - 1);
+                let fx = (sx_f - sx_f.floor()).clamp(0.0, 1.0);
+                let inv_fx = 1.0 - fx;
 
-                let r = src[src_idx] as f32 * norm;
-                let g = src[src_idx + 1] as f32 * norm;
-                let b = src[src_idx + 2] as f32 * norm;
+                let w00 = inv_fx * inv_fy;
+                let w10 = fx * inv_fy;
+                let w01 = inv_fx * fy;
+                let w11 = fx * fy;
+
+                let idx00 = row0 + sx0 * 3;
+                let idx10 = row0 + sx1 * 3;
+                let idx01 = row1 + sx0 * 3;
+                let idx11 = row1 + sx1 * 3;
+
+                let r = (src[idx00] as f32 * w00
+                    + src[idx10] as f32 * w10
+                    + src[idx01] as f32 * w01
+                    + src[idx11] as f32 * w11)
+                    * norm;
+                let g = (src[idx00 + 1] as f32 * w00
+                    + src[idx10 + 1] as f32 * w10
+                    + src[idx01 + 1] as f32 * w01
+                    + src[idx11 + 1] as f32 * w11)
+                    * norm;
+                let b = (src[idx00 + 2] as f32 * w00
+                    + src[idx10 + 2] as f32 * w10
+                    + src[idx01 + 2] as f32 * w01
+                    + src[idx11 + 2] as f32 * w11)
+                    * norm;
 
                 let dst_idx = dst_row + (pad_left + rx);
                 self.tensor_buffer[dst_idx] = r;

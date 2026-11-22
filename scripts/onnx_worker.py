@@ -40,9 +40,9 @@ while True:
         tensor = np.frombuffer(raw, dtype=np.float32).reshape((1, 3, 320, 320))
         out = sess.run(None, {'images': tensor})[0] # [1, 6, 2100]
 
-        # Парсинг кандидатов с порогом 8% (как в проверенном проекте)
+        # Парсинг кандидатов с порогом от 5% (тонкая фильтрация задается в settings.json)
         scores = np.maximum(out[0, 4, :], out[0, 5, :])
-        mask = scores >= 0.08
+        mask = scores >= 0.05
         
         detections = []
         if np.any(mask):
