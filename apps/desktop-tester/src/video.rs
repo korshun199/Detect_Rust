@@ -2,9 +2,10 @@ use std::io::Read;
 use std::process::{Child, ChildStdout, Command, Stdio};
 
 /// Источник видеопотока через пайп ffmpeg (поддерживает файлы MP4/AVI и устройства V4L2)
+#[allow(dead_code)]
 pub struct VideoReader {
-    pub _width: usize,
-    pub _height: usize,
+    pub width: usize,
+    pub height: usize,
     child: Child,
     stdout: ChildStdout,
     buffer: Vec<u8>,
