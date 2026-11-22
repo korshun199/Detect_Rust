@@ -2,7 +2,7 @@ mod osd;
 mod video;
 
 use detect_compute::{Letterbox, YoloDetector};
-use detect_core::{BBox, Settings, TrackState, TrackingEngine};
+use detect_core::{BBox, OperatingMode, Settings, TrackState, TrackingEngine};
 use minifb::{Key, MouseButton, MouseMode, Window, WindowOptions};
 use std::env;
 use std::path::Path;
@@ -58,7 +58,11 @@ fn main() {
         settings.detection.confidence_threshold,
         settings.detection.nms_iou_threshold,
     );
-    let mut engine = TrackingEngine::new(settings.tracking.max_lost_frames);
+    let mut engine = TrackingEngine::new(
+        settings.tracking.max_lost_frames,
+        settings.tracking.mode,
+        &settings.control,
+    );
 
     // Цвета из settings.json
     let box_color = ((settings.osd.box_color[0] as u32) << 16)
@@ -80,7 +84,7 @@ fn main() {
             frames_processed += 1;
             let _tensor = letterbox.process_rgb24(raw_frame, width, height);
             let dt = 1.0 / (settings.video.fps as f32);
-            let _ = engine.update(&[], dt);
+            let _ = engine.update(&[], width as f32, height as f32, dt);
 
             if frames_processed >= 300 {
                 break;
@@ -140,9 +144,9 @@ fn main() {
                 // Препроцессинг
                 let _tensor = letterbox.process_rgb24(raw_frame, width, height);
 
-                // Шаг трекера Калмана
+                // Шаг трекера Калмана и расчет ПИД-управления
                 let dt = 1.0 / (settings.video.fps as f32);
-                let _ = engine.update(&[], dt);
+                let _ = engine.update(&[], width as f32, height as f32, dt);
             } else {
                 println!("[STATUS] Конец видеофайла.");
                 break;
@@ -158,6 +162,15 @@ fn main() {
         }
         if window.is_key_pressed(Key::R, minifb::KeyRepeat::No) {
             engine.unlock();
+        }
+        // Переключение режимов: [M]
+        if window.is_key_pressed(Key::M, minifb::KeyRepeat::No) {
+            let next_mode = match engine.mode {
+                OperatingMode::AiDetection => OperatingMode::OpticalGuidance,
+                OperatingMode::OpticalGuidance => OperatingMode::AiDetection,
+            };
+            engine.set_mode(next_mode);
+            println!("[MODE] Переключен режим на: {:?}", next_mode);
         }
 
         // Обработка клика мыши: ручной захват цели!
@@ -183,14 +196,30 @@ fn main() {
             );
         }
 
-        // 4.2. Рамка сопровождаемой цели
+        // 4.2. Рамка сопровождаемой цели и линия наведения
         if let Some(target) = engine.target {
             let color = match engine.state {
-                TrackState::Tracking => box_color,
+                TrackState::Tracking => {
+                    if engine.mode == OperatingMode::OpticalGuidance {
+                        0x00FFCC00 // Желтый в режиме боевого наведения
+                    } else {
+                        box_color  // Зеленый в режиме разведки
+                    }
+                }
                 TrackState::Lost => red,
                 TrackState::Searching => cyan,
             };
             osd::draw_bbox(&mut screen_buffer, width, height, &target, color);
+
+            // Линия от центра прицела к цели (вектор наведения)
+            if engine.mode == OperatingMode::OpticalGuidance && engine.last_command.active {
+                let cx = (target.cx as isize).clamp(0, width as isize - 1);
+                let cy = (target.cy as isize).clamp(0, height as isize - 1);
+                let mid_x = (width / 2) as isize;
+                let mid_y = (height / 2) as isize;
+                // Направляющий вектор от перекрестия к цели
+                osd::draw_line(&mut screen_buffer, width, height, mid_x, mid_y, cx, cy, 0x00FF3333);
+            }
 
             // Текст координат над рамкой
             let target_info = format!("TARGET [X:{:.0} Y:{:.0} CONF:{:.0}%]", 
@@ -207,17 +236,34 @@ fn main() {
             );
         }
 
-        // 4.3. Верхняя строка телеметрии HUD
+        // 4.3. Верхняя строка: Режим и статус
+        let mode_banner = match engine.mode {
+            OperatingMode::AiDetection => "[MODE 1: AI RECONNAISSANCE / SCAN]",
+            OperatingMode::OpticalGuidance => "[MODE 2: OPTICAL GUIDANCE -> MOTORS ACTIVE]",
+        };
+        let mode_color = match engine.mode {
+            OperatingMode::AiDetection => cyan,
+            OperatingMode::OpticalGuidance => 0x00FFCC00, // Ярко-желтый тактический
+        };
+        osd::draw_text(&mut screen_buffer, width, height, 20, 20, mode_banner, mode_color, 2);
+
+        // Статус трекера
         let status_text = match engine.state {
             TrackState::Tracking => "STATUS: TRACKING [LOCKED]",
             TrackState::Lost => "STATUS: OCCLUSION [KALMAN PREDICT]",
             TrackState::Searching => "STATUS: SEARCHING",
         };
-        let hud_left = format!("FPS:{:.1} | RES:{}x{} | FRAME:#{} | {}", 
-            current_fps, width, height, frame_counter, status_text);
-        osd::draw_text(&mut screen_buffer, width, height, 20, 20, &hud_left, text_color, 2);
+        let hud_left = format!("FPS:{:.1} | FRAME:#{} | {}", current_fps, frame_counter, status_text);
+        osd::draw_text(&mut screen_buffer, width, height, 20, 45, &hud_left, text_color, 2);
 
-        // 4.4. Индикатор батареи и радиосвязи
+        // 4.4. Команды управления двигателями (STM32 Telemetry)
+        if engine.last_command.active {
+            let cmd_text = format!("MOTORS CMD: [YAW:{:+.1} deg/s | PITCH:{:+.1} deg/s]", 
+                engine.last_command.yaw_rate, engine.last_command.pitch_rate);
+            osd::draw_text(&mut screen_buffer, width, height, width - 600, 45, &cmd_text, 0x00FF9900, 2);
+        }
+
+        // Индикатор батареи и радиосвязи
         let hud_right = "BAT:16.4V [4S OK] | LINK:UART 921600";
         osd::draw_text(&mut screen_buffer, width, height, width - 420, 20, hud_right, cyan, 2);
 
@@ -225,7 +271,7 @@ fn main() {
         let help_text = if is_paused {
             "PAUSED -- PRESS SPACE TO RESUME"
         } else {
-            "CLICK: LOCK TARGET | SPACE: PAUSE | R: RESET | ESC: EXIT"
+            "[M]: TOGGLE MODE | CLICK: LOCK TARGET | [R]: RESET | [SPACE]: PAUSE | [ESC]: EXIT"
         };
         osd::draw_text(&mut screen_buffer, width, height, 20, height - 30, help_text, 0x00AAAAAA, 2);
 

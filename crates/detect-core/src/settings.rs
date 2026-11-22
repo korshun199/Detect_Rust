@@ -110,9 +110,21 @@ impl Default for DetectionConfig {
     }
 }
 
+/// Режим работы системы
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OperatingMode {
+    /// Режим 1: Нейросетевое обнаружение и визуальное слежение (разведка/поиск)
+    #[serde(rename = "ai_detection")]
+    AiDetection,
+    /// Режим 2: Оптический трекер без нейросети с управлением двигателями (доводка на цель)
+    #[serde(rename = "optical_guidance")]
+    OpticalGuidance,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrackingConfig {
     pub enabled: bool,
+    pub mode: OperatingMode,
     pub algorithm: String,
     pub max_lost_frames: u32,
     pub iir_alpha: f32,
@@ -122,6 +134,7 @@ impl Default for TrackingConfig {
     fn default() -> Self {
         Self {
             enabled: true,
+            mode: OperatingMode::AiDetection,
             algorithm: "kcf".to_string(),
             max_lost_frames: 15,
             iir_alpha: 0.65,
