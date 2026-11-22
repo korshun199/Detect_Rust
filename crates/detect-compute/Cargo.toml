@@ -1,0 +1,8 @@
+[package]
+name = "detect-compute"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+detect-core = { path = "../detect-core" }
+

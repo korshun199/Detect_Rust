@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/detect-core",
+    "crates/detect-compute",
+    "apps/desktop-tester",
+]
+

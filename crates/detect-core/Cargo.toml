@@ -1,0 +1,8 @@
+[package]
+name = "detect-core"
+version = "0.1.0"
+edition = "2021"
+description = "Pure algorithmic core for real-time object detection, tracking, and filtering"
+
+[dependencies]
+

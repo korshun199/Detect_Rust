@@ -1,0 +1,9 @@
+[package]
+name = "desktop-tester"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+detect-core = { path = "../../crates/detect-core" }
+detect-compute = { path = "../../crates/detect-compute" }
+
